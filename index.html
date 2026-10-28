@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Informe de intervenciones</title>
+<link rel="stylesheet" href="https://js.arcgis.com/4.31/esri/themes/light/main.css">
+<script src="https://js.arcgis.com/4.31/"></script>
+<style>
+  :root { --tinta:#111827; --gris:#6b7280; --linea:#e5e7eb; --fondo:#f3f4f6; --azul:#1F4E78;
+          --bueno:#1FAA2E; --regular:#FF8C00; --malo:#E00000; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#d1d5db; color:var(--tinta); font-family:Arial, Helvetica, sans-serif; }
+  .panel { background:#1f2937; color:#fff; padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .panel select, .panel input { padding:6px 8px; border-radius:6px; border:0; font-size:14px; }
+  .panel button { padding:7px 14px; border:0; border-radius:6px; background:#2563eb; color:#fff; font-weight:bold; cursor:pointer; }
+  .panel button.sec { background:#4b5563; }
+  .panel .estado { margin-left:auto; font-size:12px; opacity:.85; }
+  .hoja { width:8.5in; min-height:11in; margin:18px auto; background:#fff; padding:0.5in 0.55in; box-shadow:0 2px 12px rgba(0,0,0,.25); }
+  .vacio { color:var(--gris); text-align:center; padding-top:3in; }
+  .cab { background:var(--azul); color:#fff; border-radius:10px; padding:14px 18px; display:flex; justify-content:space-between; align-items:flex-end; }
+  .cab h1 { margin:0; font-size:20px; } .cab .sub { font-size:12px; opacity:.9; margin-top:4px; }
+  .cab .der { text-align:right; font-size:11px; opacity:.9; }
+  h2 { font-size:13px; margin:18px 0 6px; padding:6px 10px; border-radius:6px; background:#e0ecf7; color:var(--azul); }
+  .tarjetas { display:flex; gap:8px; margin-top:12px; }
+  .tarjeta { flex:1; border:1px solid var(--linea); border-top:4px solid var(--azul); border-radius:8px; padding:8px 10px; }
+  .tarjeta .t { font-size:10px; color:var(--gris); text-transform:uppercase; } .tarjeta .v { font-size:22px; font-weight:bold; }
+  .barras .fila { display:flex; align-items:center; gap:6px; font-size:11px; margin:3px 0; }
+  .barras .nom { width:110px; } .barras .b { height:10px; border-radius:5px; }
+  table { width:100%; border-collapse:collapse; font-size:10.5px; }
+  th { background:var(--fondo); text-align:left; padding:5px 6px; border-bottom:2px solid #cbd5e1; }
+  td { padding:5px 6px; border-bottom:1px solid var(--linea); vertical-align:top; }
+  .chip { display:inline-block; border-radius:10px; padding:1px 7px; color:#fff; font-weight:bold; font-size:10px; }
+  .est { font-weight:bold; }
+  .alerta { border:1px solid #fca5a5; background:#fef2f2; border-radius:8px; padding:8px 12px; font-size:11.5px; margin-top:10px; }
+  .alerta b { color:#b91c1c; }
+  .ok { border:1px solid #86efac; background:#f0fdf4; border-radius:8px; padding:8px 12px; font-size:11.5px; margin-top:10px; color:#166534; }
+  .fotos { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .foto { border:1px solid var(--linea); border-radius:8px; overflow:hidden; break-inside:avoid; }
+  .foto img { width:100%; height:1.7in; object-fit:cover; display:block; }
+  .foto .pie { font-size:9.5px; padding:4px 6px; color:var(--gris); }
+  .pie-doc { margin-top:20px; padding-top:6px; border-top:1px solid var(--linea); font-size:9.5px; color:var(--gris); display:flex; justify-content:space-between; }
+  @page { size: letter; margin: 0.4in; }
+  @media print {
+    body { background:#fff; } .panel { display:none; }
+    .hoja { width:auto; min-height:auto; margin:0; padding:0; box-shadow:none; }
+    h2 { break-after:avoid; } tr { break-inside:avoid; }
+    * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style>
+</head>
+<body>
+<div class="panel">
+  <b>Informe de intervenciones (PRUEBA)</b>
+  <select id="modo"><option value="mes">Mensual</option><option value="radicado">Por radicado</option></select>
+  <input id="valor" placeholder="2026-10">
+  <label style="font-size:12px;"><input type="checkbox" id="altas"> incluir altas automáticas</label>
+  <button id="generar">Generar</button>
+  <button id="imprimir" class="sec">Imprimir / PDF</button>
+  <span class="estado" id="estado">Iniciando…</span>
+</div>
+<div class="hoja" id="hoja"><div class="vacio">Inicia sesión y genera un informe.</div></div>
+
+<script>
+const CONFIG = {
+  portal: "https://ansv-hub.maps.arcgis.com",
+  appId: "d1sM8WLdTQfAviHO",
+  servicio: "https://services6.arcgis.com/lbes5la6zMXAtp73/arcgis/rest/services/PRUEBA_Senalizacion_Vertical/FeatureServer",
+  capa: 0, tabla: 1,
+  titulo: "Señalización vertical — Santa Marta",
+};
+const COL_ACC = { INSTALACION:"#FF1AC6", REEMPLAZO:"#1FAA2E", REPOSICION:"#FF8C00", REUBICACION:"#1F5BD6",
+  REINSTALACION:"#00B5B5", MANTENIMIENTO:"#8B5A2B", RETIRO:"#E00000", INVENTARIO:"#5F6B7A", OTRO:"#000000" };
+const COL_EST = { BUENO:"var(--bueno)", REGULAR:"var(--regular)", MALO:"var(--malo)" };
+const INST = ["INSTALACION", "REEMPLAZO", "REPOSICION"];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const fmt = (ms, hora) => ms ? new Date(ms).toLocaleString("es-CO", hora ? { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" } : { day:"2-digit", month:"2-digit", year:"numeric" }) : "";
+const cod = (tipo) => String(tipo || "").split("- ")[0];
+const nom = (tipo) => { const t = String(tipo || ""); const i = t.indexOf("- "); return i > -1 ? t.slice(i + 2) : t; };
+const est = (e) => e ? `<span class="est" style="color:${COL_EST[e] || "#9ca3af"}">${esc(e)}</span>` : `<span style="color:#9ca3af">—</span>`;
+const gid = (g) => String(g || "").toUpperCase().replace(/[{}]/g, "");
+
+const params = new URLSearchParams(location.search);
+if (params.get("radicado")) { $("modo").value = "radicado"; $("valor").value = params.get("radicado"); }
+else { const h = new Date(); $("valor").value = params.get("mes") || `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}`; }
+$("modo").onchange = () => { $("valor").placeholder = $("modo").value === "mes" ? "2026-10" : "SAL-1284-2026"; };
+$("imprimir").onclick = () => window.print();
+
+require(["esri/identity/OAuthInfo", "esri/identity/IdentityManager", "esri/request"], (OAuthInfo, esriId, esriRequest) => {
+  const info = new OAuthInfo({ appId: CONFIG.appId, portalUrl: CONFIG.portal, popup: false });
+  esriId.registerOAuthInfos([info]);
+  const sharing = CONFIG.portal + "/sharing";
+  esriId.checkSignInStatus(sharing)
+    .then(() => listo())
+    .catch(() => { $("estado").innerHTML = '<button id="entrar">Iniciar sesión en ArcGIS</button>';
+                   $("entrar").onclick = () => esriId.getCredential(sharing); });
+
+  function listo() {
+    $("estado").textContent = "Sesión iniciada";
+    $("generar").onclick = generar;
+    if (params.get("mes") || params.get("radicado")) generar();
+  }
+  async function q(url, query) {
+    const r = await esriRequest(url, { query: { f: "json", ...query }, responseType: "json" });
+    if (r.data.error) throw new Error(r.data.error.message);
+    return r.data;
+  }
+  async function generar() {
+    const modo = $("modo").value, valor = $("valor").value.trim();
+    $("estado").textContent = "Consultando…";
+    let where, titulo;
+    if (modo === "mes") {
+      const [a, m] = valor.split("-").map(Number);
+      if (!a || !m) { $("estado").textContent = "Escribe el mes como 2026-10"; return; }
+      const sig = m === 12 ? `${a + 1}-01-01` : `${a}-${String(m + 1).padStart(2, "0")}-01`;
+      where = `fecha_intervencion >= DATE '${a}-${String(m).padStart(2, "0")}-01' AND fecha_intervencion < DATE '${sig}'`;
+      titulo = "Informe mensual — " + new Date(a, m - 1, 1).toLocaleString("es-CO", { month: "long", year: "numeric" });
+    } else {
+      if (!valor) { $("estado").textContent = "Escribe el radicado"; return; }
+      where = `radicado = '${valor.replace(/'/g, "''")}'`;
+      titulo = "Informe de la solicitud " + valor;
+    }
+    if (!$("altas").checked) where += " AND (descripcion_actividad IS NULL OR descripcion_actividad NOT LIKE 'ALTA%')";
+    try {
+      const base = CONFIG.servicio;
+      const h = (await q(`${base}/${CONFIG.tabla}/query`, { where, outFields: "*", orderByFields: "fecha_intervencion ASC" })).features.map((f) => f.attributes);
+      const gids = [...new Set(h.map((r) => gid(r.senal_globalid)).filter(Boolean))];
+      const senales = {};
+      if (gids.length) {
+        const s = await q(`${base}/${CONFIG.capa}/query`, { where: `GlobalID IN (${gids.map((g) => `'{${g}}'`).join(",")})`,
+          outFields: "*", returnGeometry: true, outSR: 4326 });
+        s.features.forEach((f) => { senales[gid(f.attributes.GlobalID)] = { ...f.attributes, geom: f.geometry }; });
+      }
+      let fotos = [];
+      if (h.length) {
+        const a = await q(`${base}/${CONFIG.tabla}/queryAttachments`, { objectIds: h.map((r) => r.OBJECTID).join(","), returnUrl: true });
+        const tok = (esriId.findCredential(base) || {}).token;
+        (a.attachmentGroups || []).forEach((g) => g.attachmentInfos.forEach((ai) => {
+          if (String(ai.contentType).startsWith("image")) {
+            const r = h.find((x) => x.OBJECTID === g.parentObjectId);
+            fotos.push({ url: ai.url + (tok ? `?token=${tok}` : ""), r });
+          }
+        }));
+      }
+      pintar(titulo, h, senales, fotos);
+      $("estado").textContent = `${h.length} intervención(es) · ${fotos.length} foto(s)`;
+    } catch (e) { $("estado").textContent = "Error: " + e.message; console.error(e); }
+  }
+
+  function pintar(titulo, h, senales, fotos) {
+    const resultado = (r) => r.estado_senal_resultante || (INST.includes(r.tipo_intervencion) ? "BUENO" : null);
+    const porTipo = {}; h.forEach((r) => porTipo[r.tipo_intervencion] = (porTipo[r.tipo_intervencion] || 0) + 1);
+    const maxT = Math.max(1, ...Object.values(porTipo));
+    const ultimo = {}; h.forEach((r) => ultimo[gid(r.senal_globalid)] = r);
+    const finales = Object.values(ultimo).map(resultado);
+    const cuenta = (e) => finales.filter((x) => x === e).length;
+    const criticas = Object.entries(ultimo).filter(([, r]) => ["MALO", "REGULAR"].includes(resultado(r)));
+    let x = `<div class="cab"><div><h1>${esc(titulo)}</h1><div class="sub">${esc(CONFIG.titulo)}</div></div>
+             <div class="der">CI2 · Secretaría de Movilidad<br>Generado ${fmt(Date.now(), true)}</div></div>`;
+    x += `<div class="tarjetas">
+      <div class="tarjeta"><div class="t">Intervenciones</div><div class="v">${h.length}</div></div>
+      <div class="tarjeta"><div class="t">Señales intervenidas</div><div class="v">${Object.keys(ultimo).length}</div></div>
+      <div class="tarjeta" style="border-top-color:var(--bueno)"><div class="t">Quedaron BUENO</div><div class="v" style="color:var(--bueno)">${cuenta("BUENO")}</div></div>
+      <div class="tarjeta" style="border-top-color:var(--regular)"><div class="t">REGULAR</div><div class="v" style="color:var(--regular)">${cuenta("REGULAR")}</div></div>
+      <div class="tarjeta" style="border-top-color:var(--malo)"><div class="t">MALO</div><div class="v" style="color:var(--malo)">${cuenta("MALO")}</div></div></div>`;
+    if (!h.length) { $("hoja").innerHTML = x + `<div class="vacio" style="padding-top:1in">No hay intervenciones para este filtro.</div>`; return; }
+    x += `<h2>Intervenciones por tipo</h2><div class="barras">` + Object.entries(porTipo).sort((a, b) => b[1] - a[1]).map(([t, n]) =>
+      `<div class="fila"><span class="nom">${esc(t)}</span><span class="b" style="width:${Math.round(n / maxT * 380)}px;background:${COL_ACC[t] || "#000"}"></span><span>${n}</span></div>`).join("") + `</div>`;
+    x += `<h2>Detalle de intervenciones</h2><table><tr><th>Fecha</th><th>Señal</th><th>Intervención</th><th>Tablero</th><th>Soporte</th><th>Cuadrilla</th><th>Observaciones</th></tr>`;
+    h.forEach((r) => {
+      const s = senales[gid(r.senal_globalid)] || {};
+      const cambio = INST.slice(0, 2).includes(r.tipo_intervencion) && r.tipo_anterior
+        ? `<br><span style="color:#065f46">${esc(cod(r.tipo_anterior))} → ${esc(cod(r.tipo_instalado || s.tipo_senal))}</span>` : "";
+      x += `<tr><td>${fmt(r.fecha_intervencion)}</td>
+        <td><b>${esc(cod(s.tipo_senal))}</b> ${esc(nom(s.tipo_senal))}<br><span style="color:var(--gris)">ID ${esc(s.identificador_senal || s.fid || r.codigo_elemento || "")}</span></td>
+        <td><span class="chip" style="background:${COL_ACC[r.tipo_intervencion] || "#000"}">${esc(r.tipo_intervencion)}</span>${cambio}</td>
+        <td>${est(r.estado_senal_anterior)} → ${est(resultado(r))}</td>
+        <td>${est(r.estado_soporte_anterior)} → ${est(r.estado_soporte_resultante || (r.tipo_intervencion === "INSTALACION" ? "BUENO" : null))}</td>
+        <td>${esc(r.cuadrilla || "")}</td><td>${esc([r.descripcion_actividad, r.observaciones].filter(Boolean).join(" · "))}</td></tr>`;
+    });
+    x += `</table>`;
+    x += criticas.length
+      ? `<div class="alerta"><b>⚠ Atención:</b> ${criticas.length} señal(es) quedaron en REGULAR o MALO después de la última visita: ` +
+        criticas.map(([g, r]) => { const s = senales[g] || {}; return `${esc(cod(s.tipo_senal))} (ID ${esc(s.identificador_senal || s.fid)}, ${esc(resultado(r))})`; }).join("; ") + `.</div>`
+      : `<div class="ok">✔ Todas las señales intervenidas quedaron en BUENO.</div>`;
+    x += `<h2>Registro fotográfico (${fotos.length})</h2>`;
+    x += fotos.length ? `<div class="fotos">` + fotos.map((f) => { const s = senales[gid(f.r.senal_globalid)] || {};
+        return `<div class="foto"><img src="${esc(f.url)}" loading="eager"><div class="pie">${fmt(f.r.fecha_intervencion)} · ${esc(cod(s.tipo_senal))} · ${esc(f.r.tipo_intervencion)}</div></div>`; }).join("") + `</div>`
+      : `<div style="font-size:11px;color:var(--gris)">Sin fotos en las intervenciones de este informe.</div>`;
+    x += `<div class="pie-doc"><span>Generado desde ArcGIS Online — ${fmt(Date.now(), true)}</span><span>Documento de PRUEBA — no oficial</span></div>`;
+    $("hoja").innerHTML = x;
+  }
+});
+</script>
+</body>
+</html>
